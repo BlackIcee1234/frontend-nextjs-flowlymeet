@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { ROOM_EVENTS } from '@/lib/constants/constants';
+import { ROOM_EVENTS } from '@/lib/constants/room.constants';
 
 interface VideoChatProps {
   serverUrl?: string;

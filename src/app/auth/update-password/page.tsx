@@ -1,5 +1,5 @@
 'use client';
-import { UpdatePasswordForm } from "@/components/auth/UpdatePasswordForm";
+import { UpdatePasswordForm } from "@/components/auth/update-password/UpdatePasswordForm";
 
 export default function UpdatePasswordPage() {
   return (

@@ -1,5 +1,5 @@
 'use client';
-import { ConfirmAccountForm } from "@/components/auth/ConfirmAccountForm";
+import { ConfirmAccountForm } from "@/components/auth/confirm-account/ConfirmAccountForm";
 import { Suspense } from "react";
 
 export default function ConfirmAccountPage() {

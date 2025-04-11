@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { BACKEND_URL } from '@/lib/constants/constants';
+import { BACKEND_URL } from '@/lib/constants/room.constants';
 import { Participant } from '@/lib/types/room.types';
 import { Message } from '@/lib/types/webrtc.types';
 import { initializePeerConnection, handleSignal, toggleMediaTrack, stopMediaStream } from '@/lib/utils/webrtc';
