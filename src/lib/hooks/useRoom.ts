@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import io, { Socket } from 'socket.io-client';
 import { BACKEND_URL, ROOM_EVENTS } from '@/lib/constants/room.constants';
 import { Participant } from '@/lib/types/room.types';
 import { Message } from '@/lib/types/webrtc.types';
-import { initializePeerConnection, handleSignal, toggleMediaTrack, stopMediaStream } from '@/lib/utils/webrtc';
-import { setupSocketEvents, emitJoinRoom, emitLeaveRoom, emitMediaStateChange, emitScreenShareStart, emitScreenShareStop, emitMessage } from '@/lib/utils/socket';
+import { toggleMediaTrack, stopMediaStream } from '@/lib/utils/webrtc';
+import { emitLeaveRoom, emitMediaStateChange, emitScreenShareStart, emitScreenShareStop, emitMessage } from '@/lib/utils/socket';
 import { useParams } from 'next/navigation';
 
 export const useRoom = () => {
@@ -22,7 +22,7 @@ export const useRoom = () => {
   const peers = useRef<Record<string, RTCPeerConnection>>({});
 
   // Setup WebRTC peer connection
-  const setupPeerConnection = (userId: string) => {
+  const setupPeerConnection = useCallback((userId: string) => {
     const peerConnection = new RTCPeerConnection({
       iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
     });
@@ -59,7 +59,7 @@ export const useRoom = () => {
     };
 
     return peerConnection;
-  };
+  }, [localStream, roomId, socket]);
 
   useEffect(() => {
     const initializeMedia = async () => {
@@ -101,6 +101,12 @@ export const useRoom = () => {
       // Room events
       socketInstance.on(ROOM_EVENTS.USER_JOINED, (data) => {
         console.log('User joined:', data);
+        setParticipants(prev => [...prev, { 
+          id: data.userId, 
+          hasVideo: false, 
+          hasAudio: false,
+          isScreenSharing: false
+        }]);
         if (data.isCreator) {
           setMessages(prev => [...prev, { 
             text: `Sala creada: ${data.roomId}`, 
@@ -118,6 +124,7 @@ export const useRoom = () => {
 
       socketInstance.on(ROOM_EVENTS.USER_LEFT, (data) => {
         console.log('User left:', data);
+        setParticipants(prev => prev.filter(p => p.id !== data.userId));
         setMessages(prev => [...prev, { 
           text: `${data.userId} abandonó la sala`, 
           from: 'system', 
@@ -175,6 +182,11 @@ export const useRoom = () => {
         console.log('Video state changed:', data);
         if (data.userId !== socketInstance.id) {
           setIsVideoEnabled(data.videoEnabled);
+          setParticipants(prev => prev.map(p => 
+            p.id === data.userId 
+              ? { ...p, hasVideo: data.videoEnabled } 
+              : p
+          ));
         }
       });
 
@@ -199,21 +211,27 @@ export const useRoom = () => {
     const socketInstance = initializeSocket();
 
     return () => {
+      const currentPeers = peers.current;
       stopMediaStream(localStream);
       stopMediaStream(screenStream);
-      Object.values(peers.current).forEach(peer => peer.close());
+      Object.values(currentPeers).forEach(peer => peer.close());
       if (socketInstance) {
         emitLeaveRoom(socketInstance, roomId);
         socketInstance.disconnect();
       }
     };
-  }, [roomId]);
+  }, [roomId, setupPeerConnection, localStream, screenStream]);
 
   const toggleMedia = (type: 'video' | 'audio') => {
     if (localStream && socket) {
       const mediaState = toggleMediaTrack(localStream, type);
       if (mediaState) {
         emitMediaStateChange(socket, roomId, mediaState.hasVideo, mediaState.hasAudio);
+        setParticipants(prev => prev.map(p => 
+          p.id === socket.id 
+            ? { ...p, hasVideo: mediaState.hasVideo, hasAudio: mediaState.hasAudio } 
+            : p
+        ));
       }
     }
   };
