@@ -62,7 +62,7 @@ export function HistoryList() {
     }
 
     fetchMeetings()
-  }, [])
+  }, [supabase.auth])
 
   if (loading) {
     return (

@@ -1,8 +1,8 @@
 "use client"
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { Avatar } from "@/components/ui/avatar"
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase/client"
 import { Loader2, Mail, Calendar, Shield, LogOut } from "lucide-react"
@@ -60,7 +60,7 @@ export function AccountProfile() {
     }
 
     fetchProfile()
-  }, [])
+  }, [supabase.auth])
 
   const handleSignOut = async () => {
     try {

@@ -6,11 +6,8 @@ import {
   CameraIcon,
   FileCodeIcon,
   FileTextIcon,
-  HelpCircleIcon,
   HistoryIcon,
   LayoutDashboardIcon,
-  SearchIcon,
-  SettingsIcon,
 } from "lucide-react"
 
 import { NavMain } from "@/components/dashboard/NavMain"

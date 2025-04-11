@@ -26,7 +26,7 @@ export default function AuthCallbackPage() {
     }
 
     handleAuthCallback()
-  }, [router])
+  }, [router, supabase.auth])
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center">

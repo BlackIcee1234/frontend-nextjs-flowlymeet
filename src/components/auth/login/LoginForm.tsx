@@ -18,13 +18,10 @@ export function LoginForm() {
     const [emailError, setEmailError] = useState('');
     const [passwordError, setPasswordError] = useState('');
     const router = useRouter();
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
     const supabase = createClient();
 
     const handleGoogleLogin = async () => {
       try {
-        setLoading(true)
         const { error } = await supabase.auth.signInWithOAuth({
           provider: 'google',
           options: {
@@ -34,9 +31,6 @@ export function LoginForm() {
         if (error) throw error
       } catch (error) {
         console.error('Error logging in with Google:', error)
-        setError('Error al iniciar sesión con Google')
-      } finally {
-        setLoading(false)
       }
     }
   
