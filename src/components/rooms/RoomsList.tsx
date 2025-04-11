@@ -6,27 +6,41 @@ import { format } from "date-fns"
 import { es } from "date-fns/locale"
 import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
+import { createClient } from "@/lib/supabase/client"
 
 interface Room {
-  id: string
-  title: string
-  description: string
-  date: string
-  emails: string[]
+  id: string;
+  code: string;
+  name: string;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  is_active: boolean;
+  max_participants: number;
+  participants?: string[];
 }
 
 export function RoomsList() {
   const router = useRouter()
   const [rooms, setRooms] = useState<Room[]>([])
   const [loading, setLoading] = useState(true)
+  const supabase = createClient()
 
   useEffect(() => {
     const fetchRooms = async () => {
       try {
-        const response = await fetch('/api/rooms')
-        if (response.ok) {
-          const data = await response.json()
-          setRooms(data)
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          const { data, error } = await supabase
+            .from('rooms')
+            .select('*');
+
+          if (error) {
+            console.error('Error fetching rooms:', error.message);
+            return;
+          }
+          console.log(data, "data")
+          setRooms(data);
         }
       } catch (error) {
         console.error('Error fetching rooms:', error)
@@ -36,10 +50,10 @@ export function RoomsList() {
     }
 
     fetchRooms()
-  }, [])
+  }, [supabase])
 
-  const handleJoinRoom = (roomId: string) => {
-    router.push(`/rooms/${roomId}`)
+  const handleJoinRoom = (roomCode: string) => {
+    router.push(`/room/${roomCode}`)
   }
 
   if (loading) {
@@ -78,19 +92,18 @@ export function RoomsList() {
             {rooms.map((room) => (
               <Card key={room.id} className="border-0 shadow-none hover:bg-muted/50 transition-colors">
                 <CardHeader>
-                  <CardTitle className="text-xl">{room.title}</CardTitle>
+                  <CardTitle className="text-xl">{room.name}</CardTitle>
                   <CardDescription>
-                    {format(new Date(room.date), "PPP", { locale: es })}
+                    {room.created_at ? format(new Date(room.created_at), "PPP", { locale: es }) : 'Fecha no disponible'}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-muted-foreground mb-4">{room.description}</p>
                   <div className="flex justify-between items-center">
                     <div className="text-sm text-muted-foreground">
-                      {room.emails.length} {room.emails.length === 1 ? 'participante' : 'participantes'}
+                      Máximo {room.max_participants} {room.max_participants === 1 ? 'participante' : 'participantes'}
                     </div>
                     <Button 
-                      onClick={() => handleJoinRoom(room.id)}
+                      onClick={() => handleJoinRoom(room.code)}
                       className="bg-[#7886C7] hover:bg-[#7886C7]/90"
                     >
                       Unirse a la Reunión

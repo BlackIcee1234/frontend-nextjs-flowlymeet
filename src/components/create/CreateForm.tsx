@@ -13,49 +13,48 @@ import { es } from "date-fns/locale"
 import { CalendarIcon } from "lucide-react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase/client"
 
 export function CreateForm() {
   const router = useRouter()
-  const [date, setDate] = useState<Date>()
-  const [emails, setEmails] = useState<string[]>([])
-  const [currentEmail, setCurrentEmail] = useState("")
-  const [title, setTitle] = useState("")
-  const [description, setDescription] = useState("")
+  const [name, setName] = useState("")
+  const [maxParticipants, setMaxParticipants] = useState<number | undefined>(undefined)
+  const [isLoading, setIsLoading] = useState(false)
+  const supabase = createClient()
 
-  const handleAddEmail = () => {
-    if (currentEmail && !emails.includes(currentEmail)) {
-      setEmails([...emails, currentEmail])
-      setCurrentEmail("")
-    }
-  }
 
-  const handleRemoveEmail = (emailToRemove: string) => {
-    setEmails(emails.filter(email => email !== emailToRemove))
-  }
+  const createRoom = async (name: string, maxParticipants?: number) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    
+    const response = await fetch('http://localhost:2000/rooms', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session?.access_token}`
+      },
+      body: JSON.stringify({
+        name,
+        maxParticipants
+      })
+    });
+
+    return response.json();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setIsLoading(true)
     
     try {
-      const response = await fetch('/api/rooms', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          title,
-          description,
-          date,
-          emails,
-          userId: "user-id-here" // You'll need to get this from your auth system
-        }),
-      })
-
-      if (response.ok) {
+      const result = await createRoom(name, maxParticipants)
+      console.log(result, "result")
+      if (result.success) {
         router.push('/rooms')
       }
     } catch (error) {
       console.error('Error creating room:', error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -68,97 +67,40 @@ export function CreateForm() {
               Crear Nueva Reunión
             </CardTitle>
             <CardDescription>
-              Completa los detalles de tu reunión y compártela con los participantes
+              Completa los detalles de tu reunión
             </CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="space-y-2">
-                <Label htmlFor="title">Título de la Reunión</Label>
+                <Label htmlFor="name">Nombre de la Reunión</Label>
                 <Input
-                  id="title"
+                  id="name"
                   placeholder="Ej: Reunión de equipo semanal"
-                  value={title}
-                  onChange={(e) => setTitle(e.target.value)}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
                   required
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="description">Descripción</Label>
-                <Textarea
-                  id="description"
-                  placeholder="Describe el propósito de la reunión"
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  required
+                <Label htmlFor="maxParticipants">Máximo de Participantes (opcional)</Label>
+                <Input
+                  id="maxParticipants"
+                  type="number"
+                  min="1"
+                  placeholder="Ej: 10"
+                  value={maxParticipants || ''}
+                  onChange={(e) => setMaxParticipants(e.target.value ? parseInt(e.target.value) : undefined)}
                 />
               </div>
 
-              <div className="space-y-2">
-                <Label>Fecha y Hora</Label>
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button
-                      variant={"outline"}
-                      className={cn(
-                        "w-full justify-start text-left font-normal",
-                        !date && "text-muted-foreground"
-                      )}
-                    >
-                      <CalendarIcon className="mr-2 h-4 w-4" />
-                      {date ? format(date, "PPP", { locale: es }) : "Selecciona una fecha"}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0">
-                    <Calendar
-                      mode="single"
-                      selected={date}
-                      onSelect={setDate}
-                      initialFocus
-                      locale={es}
-                    />
-                  </PopoverContent>
-                </Popover>
-              </div>
-
-              <div className="space-y-2">
-                <Label>Invitados</Label>
-                <div className="flex gap-2">
-                  <Input
-                    type="email"
-                    placeholder="correo@ejemplo.com"
-                    value={currentEmail}
-                    onChange={(e) => setCurrentEmail(e.target.value)}
-                  />
-                  <Button type="button" onClick={handleAddEmail}>
-                    Agregar
-                  </Button>
-                </div>
-                {emails.length > 0 && (
-                  <div className="mt-2 space-y-2">
-                    {emails.map((email) => (
-                      <div
-                        key={email}
-                        className="flex items-center justify-between p-2 bg-muted rounded-md"
-                      >
-                        <span className="text-sm">{email}</span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRemoveEmail(email)}
-                        >
-                          Eliminar
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              <Button type="submit" className="w-full bg-[#7886C7] hover:bg-[#7886C7]/90">
-                Crear Reunión
+              <Button 
+                type="submit" 
+                className="w-full bg-[#7886C7] hover:bg-[#7886C7]/90"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Creando...' : 'Crear Reunión'}
               </Button>
             </form>
           </CardContent>

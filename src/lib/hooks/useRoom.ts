@@ -1,90 +1,196 @@
 import { useEffect, useRef, useState } from 'react';
 import io, { Socket } from 'socket.io-client';
-import { BACKEND_URL } from '@/lib/constants/room.constants';
+import { BACKEND_URL, ROOM_EVENTS } from '@/lib/constants/room.constants';
 import { Participant } from '@/lib/types/room.types';
 import { Message } from '@/lib/types/webrtc.types';
 import { initializePeerConnection, handleSignal, toggleMediaTrack, stopMediaStream } from '@/lib/utils/webrtc';
 import { setupSocketEvents, emitJoinRoom, emitLeaveRoom, emitMediaStateChange, emitScreenShareStart, emitScreenShareStop, emitMessage } from '@/lib/utils/socket';
+import { useParams } from 'next/navigation';
 
-export const useRoom = (roomId: string) => {
+export const useRoom = () => {
+  const params = useParams();
+  const roomId = params?.id as string;
   const [socket, setSocket] = useState<Socket | null>(null);
   const [message, setMessage] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
+  const [isConnected, setIsConnected] = useState(false);
+  const [isVideoEnabled, setIsVideoEnabled] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const peers = useRef<Record<string, RTCPeerConnection>>({});
-  console.log(socket)
+
+  // Setup WebRTC peer connection
+  const setupPeerConnection = (userId: string) => {
+    const peerConnection = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    });
+
+    peerConnection.ontrack = (event) => {
+      if (localStream) {
+        localStream.addTrack(event.track);
+      }
+    };
+
+    peerConnection.onicecandidate = (event) => {
+      if (event.candidate && socket) {
+        socket.emit(ROOM_EVENTS.ICE_CANDIDATE, {
+          room: roomId,
+          targetUserId: userId,
+          candidate: event.candidate
+        });
+      }
+    };
+
+    peerConnection.onconnectionstatechange = () => {
+      console.log('Connection state:', peerConnection.connectionState);
+      if (peerConnection.connectionState === 'disconnected' || 
+          peerConnection.connectionState === 'failed') {
+        if (peers.current[userId]) {
+          peers.current[userId].close();
+          delete peers.current[userId];
+        }
+      }
+    };
+
+    peerConnection.oniceconnectionstatechange = () => {
+      console.log('ICE connection state:', peerConnection.iceConnectionState);
+    };
+
+    return peerConnection;
+  };
 
   useEffect(() => {
     const initializeMedia = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          video: true, 
+          audio: true 
+        });
         setLocalStream(stream);
       } catch (error) {
         console.error('Error accessing media devices:', error);
+        setError('No se pudo acceder a la cámara o micrófono');
       }
     };
 
     const initializeSocket = () => {
-      const socketInstance = io(BACKEND_URL);
-      setSocket(socketInstance);
-      emitJoinRoom(socketInstance, roomId);
+      const socketInstance = io(BACKEND_URL, {
+        path: '/socket.io',
+        transports: ['websocket', 'polling'],
+      });
 
-      setupSocketEvents(socketInstance, {
-        onUserJoined: (userId, roomParticipants) => {
-          setParticipants(roomParticipants);
-          if (localStream) {
-            const peer = initializePeerConnection({
-              userId,
-              type: 'video',
-              stream: localStream,
-              socket: socketInstance,
-              roomId
-            });
-            peers.current[userId] = peer;
-          }
-        },
-        onUserDisconnected: (userId) => {
-          if (peers.current[userId]) {
-            peers.current[userId].close();
-            delete peers.current[userId];
-          }
-          setParticipants(prev => prev.filter(p => p.id !== userId));
-        },
-        onMessage: (message) => {
-          setMessages(prev => [...prev, message]);
-        },
-        onMediaStateChange: (userId, hasVideo, hasAudio) => {
-          setParticipants(prev =>
-            prev.map(p => p.id === userId ? { ...p, hasVideo, hasAudio } : p)
-          );
-        },
-        onScreenShareStart: (userId) => {
-          setParticipants(prev =>
-            prev.map(p => p.id === userId ? { ...p, isScreenSharing: true } : p)
-          );
-        },
-        onScreenShareStop: (userId) => {
-          setParticipants(prev =>
-            prev.map(p => p.id === userId ? { ...p, isScreenSharing: false } : p)
-          );
-        },
-        onSignal: async (payload) => {
-          const { from, signal, type } = payload;
-          if (!peers.current[from]) {
-            const peer = initializePeerConnection({
-              userId: from,
-              type,
-              stream: type === 'screen' ? screenStream : localStream,
-              socket: socketInstance,
-              roomId
-            });
-            peers.current[from] = peer;
-          }
-          await handleSignal(peers.current[from], signal, socketInstance, roomId, from, type);
+      // Connection events
+      socketInstance.on('connect', () => {
+        console.log('Connected to server');
+        setIsConnected(true);
+        setError(null);
+      });
+
+      socketInstance.on('disconnect', () => {
+        console.log('Disconnected from server');
+        setIsConnected(false);
+      });
+
+      socketInstance.on(ROOM_EVENTS.ERROR, (data) => {
+        console.error('Socket error:', data);
+        setError(data.message || 'Ocurrió un error');
+      });
+
+      // Room events
+      socketInstance.on(ROOM_EVENTS.USER_JOINED, (data) => {
+        console.log('User joined:', data);
+        if (data.isCreator) {
+          setMessages(prev => [...prev, { 
+            text: `Sala creada: ${data.roomId}`, 
+            from: 'system', 
+            timestamp: new Date().toISOString() 
+          }]);
+        } else {
+          setMessages(prev => [...prev, { 
+            text: `${data.userId} se unió a la sala`, 
+            from: 'system', 
+            timestamp: new Date().toISOString() 
+          }]);
         }
       });
+
+      socketInstance.on(ROOM_EVENTS.USER_LEFT, (data) => {
+        console.log('User left:', data);
+        setMessages(prev => [...prev, { 
+          text: `${data.userId} abandonó la sala`, 
+          from: 'system', 
+          timestamp: new Date().toISOString() 
+        }]);
+      });
+
+      // Video events
+      socketInstance.on('video-offer', async (data) => {
+        console.log('Received video offer:', data);
+        try {
+          const { userId, sdpOffer } = data;
+          const peer = setupPeerConnection(userId);
+          await peer.setRemoteDescription(new RTCSessionDescription(sdpOffer));
+          const answer = await peer.createAnswer();
+          await peer.setLocalDescription(answer);
+          
+          socketInstance.emit(ROOM_EVENTS.VIDEO_ANSWER, {
+            room: roomId,
+            targetUserId: userId,
+            sdpAnswer: answer
+          });
+        } catch (error) {
+          console.error('Error handling video offer:', error);
+          setError('Error al manejar la oferta de video');
+        }
+      });
+
+      socketInstance.on('video-answer-received', async (data) => {
+        console.log('Received video answer:', data);
+        try {
+          const { userId, sdpAnswer } = data;
+          const peer = peers.current[userId];
+          if (peer) {
+            await peer.setRemoteDescription(new RTCSessionDescription(sdpAnswer));
+          }
+        } catch (error) {
+          console.error('Error handling video answer:', error);
+          setError('Error al manejar la respuesta de video');
+        }
+      });
+
+      socketInstance.on('existing-users', (data) => {
+        console.log('Existing users:', data);
+        const { users } = data;
+        users.forEach((userId: string) => {
+          if (!peers.current[userId]) {
+            const peer = setupPeerConnection(userId);
+            peers.current[userId] = peer;
+          }
+        });
+      });
+
+      socketInstance.on(ROOM_EVENTS.VIDEO_STATE, (data) => {
+        console.log('Video state changed:', data);
+        if (data.userId !== socketInstance.id) {
+          setIsVideoEnabled(data.videoEnabled);
+        }
+      });
+
+      // Message events
+      socketInstance.on(ROOM_EVENTS.MESSAGE, (data) => {
+        console.log('Received message:', data);
+        setMessages(prev => [...prev, { 
+          text: data.message, 
+          from: data.from || 'unknown',
+          timestamp: new Date().toISOString()
+        }]);
+      });
+
+      // Join room automatically
+      socketInstance.emit(ROOM_EVENTS.JOIN, { room: roomId });
+      setSocket(socketInstance);
 
       return socketInstance;
     };
@@ -102,32 +208,6 @@ export const useRoom = (roomId: string) => {
       }
     };
   }, [roomId]);
-
-  useEffect(() => {
-    const currentPeers = peers.current;
-    return () => {
-      Object.values(currentPeers).forEach(peer => {
-        peer.close();
-      });
-    };
-  }, []);
-
-  useEffect(() => {
-    if (localStream && socket) {
-      participants.forEach(participant => {
-        if (!peers.current[participant.id]) {
-          const peer = initializePeerConnection({
-            userId: participant.id,
-            type: 'video',
-            stream: localStream,
-            socket,
-            roomId
-          });
-          peers.current[participant.id] = peer;
-        }
-      });
-    }
-  }, [localStream, screenStream, socket, roomId, participants]);
 
   const toggleMedia = (type: 'video' | 'audio') => {
     if (localStream && socket) {
@@ -152,19 +232,14 @@ export const useRoom = (roomId: string) => {
         if (socket) {
           emitScreenShareStart(socket, roomId);
           participants.forEach(participant => {
-            const peer = initializePeerConnection({
-              userId: participant.id,
-              type: 'screen',
-              stream,
-              socket,
-              roomId
-            });
+            const peer = setupPeerConnection(participant.id);
             peers.current[participant.id] = peer;
           });
         }
       }
     } catch (error) {
       console.error('Error toggling screen share:', error);
+      setError('Error al compartir pantalla');
     }
   };
 
@@ -192,6 +267,9 @@ export const useRoom = (roomId: string) => {
     toggleMedia,
     toggleScreenShare,
     sendMessage,
-    disconnect
+    disconnect,
+    isConnected,
+    isVideoEnabled,
+    error
   };
 };
