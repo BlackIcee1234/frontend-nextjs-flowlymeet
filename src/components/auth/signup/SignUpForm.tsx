@@ -36,7 +36,7 @@ export function SignUpForm() {
             email: email,
             password: password,
             options: {
-            emailRedirectTo: `${window.location.origin}/auth/confirm`,
+            emailRedirectTo: `${process.env.NEXT_PUBLIC_FRONTEND_URL}/auth/confirm`,
             },
         });
         console.log(response);
